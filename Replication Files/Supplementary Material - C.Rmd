@@ -1,0 +1,223 @@
+---
+title: "Annex C: Robustness Checks for Full Sample, DV=Freedom House Index"
+author: "Winston Wee"
+output: 
+  html_document:
+    df_print: paged
+    pdf_document: default
+  fontsize: 12pt
+---
+
+\vspace{5ex}
+
+```{=html}
+<style>
+body{
+text-align: justify
+}
+</style>
+```
+
+
+```{r, echo=FALSE, message=FALSE, tidy=TRUE, results='hide'}
+rm(list=ls())
+cat("\014")
+getwd()
+setwd("Replication Files")
+load_packages=c("dplyr","miceadds","readxl","writexl","data.table","naniar","car","bestNormalize","broom",
+                "sandwich","lmtest","plm","ggplot2","fixest","textreg","stargazer","pcse","mediation",
+                "prais","stringr","interactions","tidyverse","sjPlot","plm","lme4","nlme",
+                "olsrr","multiwayvcov","ivreg","ghibli","formatR")
+suppressMessages(lapply(load_packages,require,character.only=TRUE))
+rm(load_packages)
+## Loading HT-specific Functions
+source("06 panelAR_HT Functions.R") # for the AR(1) correction
+source("05 Functions.R") # for amended Mediation functions
+source("07 Panel Cluster Robust SE Mediation.R") # for amended Mediation functions
+
+## Load required datasets
+load("Subsetted Datasets.RData")
+
+demeaned=grep("_demeaned$",colnames(sample.full),value=TRUE)
+panel.full=sample.full[,c("country","year",demeaned)]
+colname_panel=colnames(panel.full)
+colname_panel=gsub("_demeaned","",colname_panel)
+colnames(panel.full)=colname_panel
+rm(colname_panel,panel_dat,sample.micro,sample.VDem,demeaned)
+```
+
+# Introduction
+
+In the main body of the thesis, I propose two causal mechanisms that may predict the likelihood of democracy in island states. On the one hand, I propose the 'carrots' pathway, which posits that a larger population is more likely to place heavier demands and pressures on clientelistic linkages, thereby increasing the likelihood of democracy through the reduction of clientelism which itself challenges the integrity of democratic institutions (see Fox, 1994; Stokes 2005). On the other hand, I propose the 'sticks' pathway. While the military may function as a repressive institution, it requires manpower and other resources to exert coercion and intimidation on the population it is meant to control. A larger population, I argue, may be more diversified in its economic outlook, making it more likely that countries with larger populations may have a smaller military relative to its population size than countries with smaller populations. Without credible threats by the military, larger countries are more likely to be democratic.
+
+All regression models in the main body of the thesis control for both causal mechanisms (apart from Models 1-3 in Table 1). Though issues of the violation of the sequential ignorability assumption may arise, the effects of both mechanisms must be controlled for owing to potential confounding between either mechanism and the dependent variable. This means that military participation rate can be a confounder of clientelism and democracy, with clientelism performing the same role. However, we might also be motivated to examine the individual effects of the mechanism without the influence of the other to see if the relationship still holds.
+
+The regression tables below depict the regression results for the full sample of countries. Unfortunately, several countries are still omitted from the full sample, namely Brunei Darussalam, the Maldives, Sao Tome and Principe, Taiwan, and Timor-Leste, owing to missingness of data. One area of uncertainty is the biases in the results that can arise out of the missingness of these following countries. Nonetheless, the full sample contains 43 out of the original 48 island countries. The study on the full sample is also motivated by the omission of microstates from the Varieties of Democracy dataset. This also means that clientelism in these microstates have not been studied and coded in the eventual V-Dem dataset. However, as a matter of methodological and empirical robustness, I am motivated to study the 'sticks' mechanism even if data on the 'carrots' mechanism are not fully collected. The following results contain results from when only the 'sticks' mechanism is being accounted for for the full sample, which includes countries in the V-Dem dataset and microstates.
+
+# Regression Tables
+
+## Table C1: Relationship between Logged Population and Democracy (Freedom House Index)
+```{r, echo=TRUE, tidy=TRUE, results="asis"}
+ATE_none=lm(fh_total_reversed~ln_popn+prop_urban+ln_gdppc+govexpend_ratio+total_odashare_oecd+resourcerent+ethfrac_alesina2003+islamic+as.factor(year),sample.full)
+
+ATE_none_fe=lm(fh_total_reversed~ln_popn+prop_urban+ln_gdppc+govexpend_ratio+total_odashare_oecd+resourcerent+country+as.factor(year),panel.full)
+
+mo1=lm(fh_total_reversed~ln_popn+milrate+prop_urban+ln_gdppc+govexpend_ratio+total_odashare_oecd+resourcerent+ethfrac_alesina2003+islamic+as.factor(year),sample.full) # Main Y model
+
+mo1_fe=lm(fh_total_reversed~ln_popn+milrate+prop_urban+ln_gdppc+govexpend_ratio+total_odashare_oecd+resourcerent+country+as.factor(year),panel.full)
+
+mo1_interact=lm(fh_total_reversed~ln_popn*prop_urban+milrate*prop_urban+ln_gdppc+govexpend_ratio+total_odashare_oecd+resourcerent+ethfrac_alesina2003+islamic+as.factor(year),sample.full)
+
+mo1_interact_fe=lm(fh_total_reversed~ln_popn*prop_urban+milrate*prop_urban+ln_gdppc+govexpend_ratio+total_odashare_oecd+resourcerent+country+as.factor(year),panel.full)
+
+final.mod=list(ATE_none,mo1,mo1_fe,mo1_interact)
+final.se=list(sqrt(diag(vcovPL(ATE_none,cluster=~country+year,aggregate=FALSE))),
+              sqrt(diag(vcovPL(mo1,cluster=~country+year,aggregate=FALSE))),
+              sqrt(diag(vcovPL(mo1_fe,cluster=~country+year,aggregate=FALSE))),
+              sqrt(diag(vcovPL(mo1_interact,cluster=~country+year,aggregate=FALSE))))
+
+stargazer(final.mod,
+          type="latex",
+          header=F,
+          title="Table C1: Relationship between Logged Population and Democracy (Freedom House Index)",
+          dep.var.caption = "Freedom House Index (Reversed)",
+          digits=4,digits.extra=3,p.auto=T,t.auto=T,
+          se=final.se,
+          report="vc*sp",
+          star.cutoffs=c(0.05,0.01,0.005),
+          style="ajps",
+          omit=c("year","country"),
+          add.lines = list(c("Year FE","Yes","Yes","Yes","Yes","Yes","Yes"),
+                           c("Country FE","No","Yes","No","Yes","No","Yes")),
+          column.labels=c("Exposure-Outcome, Pooled","Pooled (No Interaction)","Panel FE (No Interaction)","Pooled (Interaction)"),
+          column.separate=c(1,1,1,1),
+          covariate.labels=c("Population (Logged)","Military Participation Rate (MPR)",
+                             "Urbanisation (% of Population)","Per Capita GDP (Logged)",
+                             "Government Expenditurre (% of GDP)","Foreign Aid Received (% of GNI)",
+                             "Resource Dependence","Ethnic Fractionalization","Islamic",
+                             "Population <span>&#215;</span> Urbanization",
+                             "MPR <span>&#215;</span> Urbanization"),
+          notes.align="l")
+          #,out="Final Annex Table/Table C1.html")
+
+```
+
+Surprisingly, even despite insignificance, the main results in Model 3 of Table A1 shows a negative relationship between population size and democracy (b=-0.0732, p=0.064). This is different from the results in Model 4 of Table 1 in the thesis, which shows a non-significant positive relationship (b=0.0077, p=0.880). The coefficient of the 'sticks' mechanism, represented by the military participation rate variable, is, nonetheless, negative and positively significant (b=-0.286, p=0.00), thus explaining that the likelihood of democracy is still lower among countries with a higher military participation rate. This is consistent with expected findings represented by the coefficient of the military participation rate variable in Model 4 of Table 1 in the thesis (b=-0.2481, p=0.00).
+
+The results explained are the long-term effects, represented by the pooled OLS models across this thesis. However, we are also interested in short term changes. Does the likelihood of democracy change as population size or military participation changes in the short term? While population changes has a negative, non-significant relationship with democracy in the short term (b=-0.375, p=0.447), the coefficient for military participation rate remains negative and significant (b=-0.0737, p=0.0091). 
+
+Certainly, the inclusion of microstates could have created this observed reversals of the signs of the coefficients of population even if the results remain non-significant. The 16 microstates excluded from the V-Dem dataset represent some of the most democratic countries in the overall universe of cases.
+
+# Table C2: Relationship between Logged Population and Military Participation Rate (Table 4 in thesis)
+
+```{r, echo=TRUE, tidy=TRUE, results="asis"}
+
+em1=lm(milrate~ln_popn+prop_urban+ln_gdppc+govexpend_ratio+total_odashare_oecd+resourcerent+ethfrac_alesina2003+islamic+as.factor(year),sample.full) # Main M model
+
+em1_fe=lm(milrate~ln_popn+prop_urban+ln_gdppc+govexpend_ratio+total_odashare_oecd+resourcerent+country+as.factor(year),panel.full)
+
+em2=lm(milrate~ln_popn*prop_urban+ln_gdppc+govexpend_ratio+total_odashare_oecd+resourcerent+ethfrac_alesina2003+islamic+as.factor(year),sample.full)
+
+em2_fe=lm(milrate~ln_popn*prop_urban+ln_gdppc+govexpend_ratio+total_odashare_oecd+resourcerent+country+as.factor(year),panel.full)
+
+em.mod=list(em1,em1_fe,em2)
+em.se=list(sqrt(diag(vcovPL(em1,cluster=~country+year,aggregate=FALSE))),
+           sqrt(diag(vcovPL(em1_fe,cluster=~country+year,aggregate=FALSE))),
+           sqrt(diag(vcovPL(em2,cluster=~country+year,aggregate=FALSE))))
+
+stargazer(em.mod,
+          type="latex",
+          header=F,
+          title="Full Sample, Exposure-Mediator Models",
+          dep.var.caption = "Military Participation Rate",
+          digits=4,digits.extra=3,p.auto=T,t.auto=T,
+          se=em.se,
+          report="vc*sp",
+          star.cutoffs=c(0.05,0.01,0.005),
+          style="ajps",
+          omit=c("year","country"),
+          add.lines = list(c("Year FE","Yes","Yes","Yes"),
+                           c("Country FE","No","Yes","No")),
+          column.labels=c("Pooled (No Interaction)","Panel FE (No Interaction)","Pooled (Interaction)"),
+          column.separate=c(1,1,1),
+          covariate.labels=c("Population (Logged)",
+                             "Urbanisation (% of Population)","Per Capita GDP (Logged)",
+                             "Government Expenditurre (% of GDP)","Foreign Aid Received (% of GNI)",
+                             "Resource Dependence","Ethnic Fractionalization","Islamic",
+                             "Population <span>&#215;</span> Urbanization"),
+          notes.align="l")#,out="Final Annex Table/Table C2.html")
+```
+
+# Causal Mediation Analysis
+
+## Hypothesis 3: The long-term operation of coercive capacity
+```{r,echo=TRUE,tidy=TRUE}
+set.seed(1000)
+modmed1=panel_mediate_vcovPL_fixed(model.m = em1, model.y = mo1,
+                                  treat = "ln_popn", mediator = "milrate",
+                                  sims = 1000, robustSE = TRUE)
+summary(modmed1)
+plot(modmed1,main="Pooled OLS, Mediator = milrate, Without Interaction",col="red")
+text(x=modmed1$tau.coef,y=1,labels=paste0(round(modmed1$tau.coef,5),'*'),pos=3) # ATE
+text(x=modmed1$z.avg,y=2,labels=paste0(round(modmed1$z.avg,5)),pos=3) # ADE
+text(x=modmed1$d.avg,y=3,labels=paste0(round(modmed1$d.avg,5),'*'),pos=3) # ACME
+mtext("Note: p<0.001 ***, 0.01 **, 0.05 *",side=1,line=3,cex=1)
+```
+
+## Hypothesis 3a: The short-term operation of coercive capacity
+```{r,echo=TRUE,tidy=TRUE}
+set.seed(1000)
+modmed2=panel_mediate_vcovPL_fixed(model.m = em1_fe, model.y = mo1_fe,
+                                  treat = "ln_popn", mediator = "milrate",
+                                  sims = 1000, robustSE = TRUE)
+summary(modmed2)
+plot(modmed2,main="Panel FE, Mediator = milrate, Without Interaction",col="red")
+text(x=modmed2$tau.coef,y=1,labels=paste0(round(modmed2$tau.coef,5)),pos=3) # ATE
+text(x=modmed2$z.avg,y=2,labels=paste0(round(modmed2$z.avg,5)),pos=3) # ADE
+text(x=modmed2$d.avg,y=3,labels=paste0(round(modmed2$d.avg,5)),pos=3) # ACME
+mtext("Note: p<0.001 ***, 0.01 **, 0.05 *",side=1,line=3,cex=1)
+```
+
+## Hypothesis 3b: The conditional operation of coercive capacity
+```{r,echo=TRUE,tidy=TRUE}
+set.seed(1000)
+modmed3=panel_mediate_vcovPL_fixed(model.m = em2, model.y = mo1_interact,
+                                  treat = "ln_popn", mediator = "milrate",
+                                  sims = 1000, robustSE = TRUE)
+summary(modmed3)
+test.modmed(modmed3,
+            covariates.1=list(prop_urban=mean(sample.full$prop_urban)-sd(sample.full$prop_urban)),
+            covariates.2=list(prop_urban=mean(sample.full$prop_urban)+sd(sample.full$prop_urban)),
+            sims=1000)
+plot(modmed3,main="Pooled OLS, Mediator = milrate, With Interaction",col="red")
+text(x=modmed3$tau.coef,y=1,labels=paste0(round(modmed3$tau.coef,5),'*'),pos=3) # ATE
+text(x=modmed3$z.avg,y=2,labels=paste0(round(modmed3$z.avg,5)),pos=3) # ADE
+text(x=modmed3$d.avg,y=3,labels=paste0(round(modmed3$d.avg,5)),pos=3) # ACME
+mtext("Note: p<0.001 ***, 0.01 **, 0.05 *",side=1,line=3,cex=1)
+
+# Additional Mediations
+modmed3.1=panel_mediate_vcovPL_fixed(model.m = em2, model.y = mo1_interact,
+                                  treat = "ln_popn", mediator = "milrate",
+                                  sims = 1000, robustSE = TRUE,
+                                  covariates = list(prop_urban=mean(sample.full$prop_urban)-sd(sample.full$prop_urban)))
+summary(modmed3.1)
+
+modmed3.2=panel_mediate_vcovPL_fixed(model.m = em2, model.y = mo1_interact,
+                                  treat = "ln_popn", mediator = "milrate",
+                                  sims = 1000, robustSE = TRUE,
+                                  covariates = list(prop_urban=mean(sample.full$prop_urban)+sd(sample.full$prop_urban)))
+summary(modmed3.2)
+plot(modmed3.1,main="Pooled OLS, Mediator = milrate, With Interaction (Less Urban)",col="blue")
+text(x=modmed3.1$tau.coef,y=1,labels=paste0(round(modmed3.1$tau.coef,5)),pos=3) # ATE
+text(x=modmed3.1$z.avg,y=2,labels=paste0(round(modmed3.1$z.avg,5)),pos=3) # ADE
+text(x=modmed3.1$d.avg,y=3,labels=paste0(round(modmed3.1$d.avg,5)),pos=3) # ACME
+mtext("Note: p<0.001 ***, 0.01 **, 0.05 *",side=1,line=3,cex=1)
+
+plot(modmed3.2,main="Pooled OLS, Mediator = milrate, With Interaction (More Urban)",col="red")
+text(x=modmed3.2$tau.coef,y=1,labels=paste0(round(modmed3.2$tau.coef,5),'**'),pos=3) # ATE
+text(x=modmed3.2$z.avg,y=2,labels=paste0(round(modmed3.2$z.avg,5),'*'),pos=3) # ADE
+text(x=modmed3.2$d.avg,y=3,labels=paste0(round(modmed3.2$d.avg,5),'**'),pos=3) # ACME
+mtext("Note: p<0.001 ***, 0.01 **, 0.05 *",side=1,line=3,cex=1)
+```
+
+Important Note: Please look at Annex C for further information about microstates. Reversals in the results from the thesis reflected in this annex are driven by the presence of microstates, most of which are overwhelmingly democratic.

@@ -1,0 +1,206 @@
+---
+title: "Annex D: Robustness Checks for Microstates, DV=Freedom House Index"
+author: "Winston Wee"
+output: 
+  html_document:
+    df_print: paged
+    pdf_document: default
+  fontsize: 12pt
+---
+
+\vspace{5ex}
+
+```{=html}
+<style>
+body{
+text-align: justify
+}
+</style>
+```
+
+```{r, echo=FALSE, message=FALSE, tidy=TRUE, results='hide'}
+rm(list=ls())
+cat("\014")
+getwd()
+setwd("Replication Files")
+load_packages=c("dplyr","miceadds","readxl","writexl","data.table","naniar","car","bestNormalize","broom",
+                "sandwich","lmtest","plm","ggplot2","fixest","textreg","stargazer","pcse","mediation",
+                "prais","stringr","interactions","tidyverse","sjPlot","plm","lme4","nlme",
+                "olsrr","multiwayvcov","ivreg","ghibli","formatR")
+suppressMessages(lapply(load_packages,require,character.only=TRUE))
+rm(load_packages)
+## Loading HT-specific Functions
+source("06 panelAR_HT Functions.R") # for the AR(1) correction
+source("05 Functions.R") # for amended Mediation functions
+source("07 Panel Cluster Robust SE Mediation.R") # for amended Mediation functions
+
+## Load required datasets
+load("Subsetted Datasets.RData")
+
+demeaned=grep("_demeaned$",colnames(sample.micro),value=TRUE)
+panel.micro=sample.micro[,c("country","year",demeaned)]
+colname_panel=colnames(panel.micro)
+colname_panel=gsub("_demeaned","",colname_panel)
+colnames(panel.micro)=colname_panel
+rm(colname_panel,panel_dat,sample.VDem,sample.full,demeaned)
+```
+
+# Regression Tables
+
+## Table D1: Relationship between Logged Population and Democracy (Freedom House Index)
+
+```{r, echo=TRUE, tidy=TRUE, results="asis"}
+ATE_none=lm(fh_total_reversed~ln_popn+prop_urban+ln_gdppc+govexpend_ratio+total_odashare_oecd+resourcerent+ethfrac_alesina2003+as.factor(year),sample.micro)
+
+ATE_none_fe=lm(fh_total_reversed~ln_popn+prop_urban+ln_gdppc+govexpend_ratio+total_odashare_oecd+resourcerent+country+as.factor(year),panel.micro)
+
+mo1=lm(fh_total_reversed~ln_popn+milrate+prop_urban+ln_gdppc+govexpend_ratio+total_odashare_oecd+resourcerent+ethfrac_alesina2003+as.factor(year),sample.micro) # Main Y model
+
+mo1_fe=lm(fh_total_reversed~ln_popn+milrate+prop_urban+ln_gdppc+govexpend_ratio+total_odashare_oecd+resourcerent+country+as.factor(year),panel.micro)
+
+mo1_interact=lm(fh_total_reversed~ln_popn*prop_urban+milrate*prop_urban+ln_gdppc+govexpend_ratio+total_odashare_oecd+resourcerent+ethfrac_alesina2003+as.factor(year),sample.micro)
+
+mo1_interact_fe=lm(fh_total_reversed~ln_popn*prop_urban+milrate*prop_urban+ln_gdppc+govexpend_ratio+total_odashare_oecd+resourcerent+country+as.factor(year),panel.micro)
+
+final.mod=list(ATE_none,mo1,mo1_fe,mo1_interact)
+final.se=list(sqrt(diag(vcovPL(ATE_none,cluster=~country+year,aggregate=FALSE))),
+              sqrt(diag(vcovPL(mo1,cluster=~country+year,aggregate=FALSE))),
+              sqrt(diag(vcovPL(mo1_fe,cluster=~country+year,aggregate=FALSE))),
+              sqrt(diag(vcovPL(mo1_interact,cluster=~country+year,aggregate=FALSE))))
+
+stargazer(final.mod,
+          type="latex",
+          header=F,
+          title="Table D1: Relationship between Logged Population and Democracy (Freedom House Index)",
+          dep.var.caption = "Freedom House Index (Reversed)",
+          digits=4,digits.extra=3,p.auto=T,t.auto=T,
+          se=final.se,
+          report="vc*sp",
+          star.cutoffs=c(0.05,0.01,0.005),
+          style="ajps",
+          omit=c("year","country"),
+          add.lines = list(c("Year FE","Yes","Yes","Yes","Yes"),
+                           c("Country FE","No","No","Yes","No")),
+          column.labels=c("Exposure-Outcome, Pooled","Pooled (No Interaction)","Panel FE (No Interaction)","Pooled (Interaction)"),
+          column.separate=c(1,1,1,1),
+          covariate.labels=c("Population (Logged)","Military Participation Rate",
+                             "Urbanisation (% of Population)","Per Capita GDP (Logged)",
+                             "Government Expenditurre (% of GDP)","Foreign Aid Received (% of GNI)",
+                             "Resource Dependence","Ethnic Fractionalization",
+                             "Population <span>&#215;</span> Urbanization",
+                             "MPR <span>&#215;</span> Urbanization"),
+          notes.align="l")#,out="Final Annex Table/Table D1.html")
+
+```
+
+# Table D2: Relationship between Logged Population and Military Participation Rate (Table 4 in thesis)
+
+```{r, echo=TRUE, tidy=TRUE, results="asis"}
+
+em1=lm(milrate~ln_popn+prop_urban+ln_gdppc+govexpend_ratio+total_odashare_oecd+resourcerent+ethfrac_alesina2003+as.factor(year),sample.micro) # Main M model
+
+em1_fe=lm(milrate~ln_popn+prop_urban+ln_gdppc+govexpend_ratio+total_odashare_oecd+resourcerent+country+as.factor(year),panel.micro)
+
+em2=lm(milrate~ln_popn*prop_urban+ln_gdppc+govexpend_ratio+total_odashare_oecd+resourcerent+ethfrac_alesina2003+as.factor(year),sample.micro)
+
+em2_fe=lm(milrate~ln_popn*prop_urban+ln_gdppc+govexpend_ratio+total_odashare_oecd+resourcerent+country+as.factor(year),panel.micro)
+
+em.mod=list(em1,em1_fe,em2)
+em.se=list(sqrt(diag(vcovPL(em1,cluster=~country+year,aggregate=FALSE))),
+           sqrt(diag(vcovPL(em1_fe,cluster=~country+year,aggregate=FALSE))),
+           sqrt(diag(vcovPL(em2,cluster=~country+year,aggregate=FALSE))))
+
+stargazer(em.mod,
+          type="latex",
+          header=F,
+          title="Microstates Sample, Exposure-Mediator Models",
+          dep.var.caption = "Military Participation Rate",
+          digits=4,digits.extra=3,p.auto=T,t.auto=T,
+          se=em.se,
+          report="vc*sp",
+          star.cutoffs=c(0.05,0.01,0.005),
+          style="ajps",
+          omit=c("year","country"),
+          add.lines = list(c("Year FE","Yes","Yes","Yes"),
+                           c("Country FE","No","Yes","No")),
+          column.labels=c("Pooled (No Interaction)","Panel FE (No Interaction)","Pooled (Interaction)","Panel FE (Interaction)"),
+          column.separate=c(1,1,1,1),
+          covariate.labels=c("Population (Logged)",
+                             "Urbanisation (% of Population)","Per Capita GDP (Logged)",
+                             "Government Expenditurre (% of GDP)","Foreign Aid Received (% of GNI)",
+                             "Resource Dependence","Ethnic Fractionalization",
+                             "Population <span>&#215;</span> Urbanization"),
+          notes.align="l")#,out="Final Annex Table/Table D2.html")
+```
+
+# Causal Mediation Analysis
+
+## Hypothesis 3: The long-term operation of coercive capacity
+```{r,echo=TRUE,tidy=TRUE}
+set.seed(1000)
+modmed1=panel_mediate_vcovPL_fixed(model.m = em1, model.y = mo1,
+                                  treat = "ln_popn", mediator = "milrate",
+                                  sims = 1000, robustSE = TRUE)
+summary(modmed1)
+plot(modmed1,main="Pooled OLS, Mediator = milrate, Without Interaction",col="red")
+text(x=modmed1$tau.coef,y=1,labels=paste0(round(modmed1$tau.coef,5)),pos=3) # ATE
+text(x=modmed1$z.avg,y=2,labels=paste0(round(modmed1$z.avg,5)),pos=3) # ADE
+text(x=modmed1$d.avg,y=3,labels=paste0(round(modmed1$d.avg,5)),pos=3) # ACME
+mtext("Note: p<0.001 ***, 0.01 **, 0.05 *",side=1,line=3,cex=1)
+```
+
+## Hypothesis 3a: The short-term operation of coercive capacity
+```{r,echo=TRUE,tidy=TRUE}
+set.seed(1000)
+modmed2=panel_mediate_vcovPL_fixed(model.m = em1_fe, model.y = mo1_fe,
+                                  treat = "ln_popn", mediator = "milrate",
+                                  sims = 1000, robustSE = TRUE)
+summary(modmed2)
+plot(modmed2,main="Panel FE, Mediator = milrate, Without Interaction",col="red")
+text(x=modmed2$tau.coef,y=1,labels=paste0(round(modmed2$tau.coef,5)),pos=3) # ATE
+text(x=modmed2$z.avg,y=2,labels=paste0(round(modmed2$z.avg,5)),pos=3) # ADE
+text(x=modmed2$d.avg,y=3,labels=paste0(round(modmed2$d.avg,5)),pos=3) # ACME
+mtext("Note: p<0.001 ***, 0.01 **, 0.05 *",side=1,line=3,cex=1)
+```
+
+## Hypothesis 3b: The conditional operation of coercive capacity
+```{r,echo=TRUE,tidy=TRUE}
+set.seed(1000)
+modmed3=panel_mediate_vcovPL_fixed(model.m = em2, model.y = mo1_interact,
+                                  treat = "ln_popn", mediator = "milrate",
+                                  sims = 1000, robustSE = TRUE)
+summary(modmed3)
+test.modmed(modmed3,
+            covariates.1=list(prop_urban=mean(sample.micro$prop_urban)-sd(sample.micro$prop_urban)),
+            covariates.2=list(prop_urban=mean(sample.micro$prop_urban)+sd(sample.micro$prop_urban)),
+            sims=1000)
+plot(modmed3,main="Pooled OLS, Mediator = milrate, With Interaction",col="red")
+text(x=modmed3$tau.coef,y=1,labels=paste0(round(modmed3$tau.coef,5),'**'),pos=3) # ATE
+text(x=modmed3$z.avg,y=2,labels=paste0(round(modmed3$z.avg,5),'*'),pos=3) # ADE
+text(x=modmed3$d.avg,y=3,labels=paste0(round(modmed3$d.avg,5),'**'),pos=3) # ACME
+mtext("Note: p<0.001 ***, 0.01 **, 0.05 *",side=1,line=3,cex=1)
+
+# Additional Mediations
+modmed3.1=panel_mediate_vcovPL_fixed(model.m = em2, model.y = mo1_interact,
+                                  treat = "ln_popn", mediator = "milrate",
+                                  sims = 1000, robustSE = TRUE,
+                                  covariates = list(prop_urban=mean(sample.micro$prop_urban)-sd(sample.micro$prop_urban)))
+summary(modmed3.1)
+
+modmed3.2=panel_mediate_vcovPL_fixed(model.m = em2, model.y = mo1_interact,
+                                  treat = "ln_popn", mediator = "milrate",
+                                  sims = 1000, robustSE = TRUE,
+                                  covariates = list(prop_urban=mean(sample.micro$prop_urban)+sd(sample.micro$prop_urban)))
+summary(modmed3.2)
+plot(modmed3.1,main="Pooled OLS, Mediator = milrate, With Interaction (Less Urban)",col="blue")
+text(x=modmed3.1$tau.coef,y=1,labels=paste0(round(modmed3.1$tau.coef,5),'***'),pos=3) # ATE
+text(x=modmed3.1$z.avg,y=2,labels=paste0(round(modmed3.1$z.avg,5),'***'),pos=3) # ADE
+text(x=modmed3.1$d.avg,y=3,labels=paste0(round(modmed3.1$d.avg,5)),pos=3) # ACME
+mtext("Note: p<0.001 ***, 0.01 **, 0.05 *",side=1,line=3,cex=1)
+
+plot(modmed3.2,main="Pooled OLS, Mediator = milrate, With Interaction (More Urban)",col="red")
+text(x=modmed3.2$tau.coef,y=1,labels=paste0(round(modmed3.2$tau.coef,5)),pos=3) # ATE
+text(x=modmed3.2$z.avg,y=2,labels=paste0(round(modmed3.2$z.avg,5)),pos=3) # ADE
+text(x=modmed3.2$d.avg,y=3,labels=paste0(round(modmed3.2$d.avg,5),'**'),pos=3) # ACME
+mtext("Note: p<0.001 ***, 0.01 **, 0.05 *",side=1,line=3,cex=1)
+```

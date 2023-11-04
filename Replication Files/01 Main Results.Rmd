@@ -1,0 +1,552 @@
+---
+title: "Honours Thesis: Main Results (DV: Participatory Democracy)"
+author: "Winston Wee"
+output: 
+  html_document:
+    df_print: paged
+    pdf_document: default
+  fontsize: 12pt
+---
+
+\vspace{5ex}
+
+```{=html}
+<style>
+body{
+text-align: justify
+}
+</style>
+```
+#  Script Setup
+
+```{r, echo=FALSE, message=FALSE, tidy=TRUE, results='hide'}
+rm(list=ls())
+cat("\014")
+getwd()
+setwd("Replication Files")
+load_packages=c("dplyr","miceadds","readxl","writexl","data.table","naniar","car","bestNormalize","broom",
+                "sandwich","lmtest","plm","ggplot2","fixest","textreg","stargazer","pcse","mediation",
+                "prais","stringr","interactions","tidyverse","sjPlot","plm","lme4","nlme",
+                "olsrr","multiwayvcov","ivreg","ghibli","formatR","abe","interplot","purrr","report")
+suppressMessages(lapply(load_packages,require,character.only=TRUE))
+rm(load_packages)
+## Loading HT-specific Functions
+source("06 panelAR_HT Functions.R") # for the AR(1) correction
+source("05 Functions.R") # for amended Mediation functions
+source("07 Panel Cluster Robust SE Mediation.R") # for amended Mediation functions
+source("09 Driscoll-Kraay SE Mediation.R") # SCC for Mediation
+source("10 TSLS Mediation.R") # Mediation TSLS
+
+## Load required datasets
+load("04 Subsetted Datasets.RData")
+load("03 All_Democracy_Data.RData")
+
+demeaned=grep("_demeaned$",colnames(sample.VDem),value=TRUE)
+panel.VDem=sample.VDem[,c("country","year",demeaned)]
+colname_panel=colnames(panel.VDem)
+colname_panel=gsub("_demeaned","",colname_panel)
+colnames(panel.VDem)=colname_panel
+rm(colname_panel,panel_dat,sample.micro,demeaned)
+
+sample.VDem$urban_binary=NA
+sample.VDem$urban_binary[sample.VDem$prop_urban<mean(sample.VDem$prop_urban,na.rm=TRUE)]=0
+sample.VDem$urban_binary[sample.VDem$prop_urban>mean(sample.VDem$prop_urban,na.rm=TRUE)]=1
+```
+
+```{r,echo=TRUE,tidy=TRUE,results='asis'}
+m1=lm(fh_total_reversed~ln_popn,data=dat_panel)
+m2=lm(v2x_partipdem~ln_popn,data=dat_panel)
+m3=lm(v2x_polyarchy~ln_popn,data=dat_panel)
+
+m.list=list(m1,m2,m3)
+
+stargazer(m.list,
+          type="html",
+          title="Bivariate Regression: Population Size and Democracy",
+          digits=4,digits.extra=3,p.auto=T,t.auto=T,
+          report="vc*s",
+          star.cutoffs=c(0.05,0.01,0.005),
+          style="ajps",
+          column.labels=c("Freedom House Index","V-Dem: Participatory Democracy","V-Dem: Polyarchy"),
+          column.separate=c(1,1,1),
+          covariate.labels=c("Population (Logged)"),
+          notes.align="l",
+          out="Robust Tables/Bivariate.html")
+```
+
+
+# Main regression table
+
+## Mediator-Outcome Models
+
+```{r,echo=TRUE,tidy=TRUE,results='asis'}
+# Mediator Outcome
+ATE_none=lm(v2x_partipdem~ln_popn+prop_urban+ln_gdppc+govexpend_ratio+total_odashare_oecd+resourcerent+ethfrac_alesina2003+islamic+as.factor(year),data=sample.VDem)
+
+ATE_Client=lm(v2x_partipdem~ln_popn+v2xnp_client+prop_urban+ln_gdppc+govexpend_ratio+total_odashare_oecd+resourcerent+ethfrac_alesina2003+islamic+as.factor(year),data=sample.VDem)
+
+ATE_milrate=lm(v2x_partipdem~ln_popn+milrate+prop_urban+ln_gdppc+govexpend_ratio+total_odashare_oecd+resourcerent+ethfrac_alesina2003+islamic+as.factor(year),data=sample.VDem)
+
+vdem.4a=lm(v2x_partipdem~ln_popn+v2xnp_client+milrate+prop_urban+ln_gdppc+govexpend_ratio+total_odashare_oecd+resourcerent+ethfrac_alesina2003+islamic+as.factor(year),data=sample.VDem)
+
+vdem.4b=lm(v2x_partipdem~ln_popn+v2xnp_client+milrate+prop_urban+ln_gdppc+govexpend_ratio+total_odashare_oecd+resourcerent+country+as.factor(year),data=panel.VDem)
+
+mo1=lm(v2x_partipdem~ln_popn*prop_urban+v2xnp_client*prop_urban+milrate*prop_urban+ln_gdppc+govexpend_ratio+total_odashare_oecd+resourcerent+ethfrac_alesina2003+islamic+as.factor(year),data=sample.VDem)
+
+mofe=lm(v2x_partipdem~ln_popn*prop_urban+v2xnp_client*prop_urban+milrate*prop_urban+ln_gdppc+govexpend_ratio+total_odashare_oecd+resourcerent+country+as.factor(year),data=panel.VDem)
+
+
+final.mod=list(ATE_none,ATE_Client,ATE_milrate,vdem.4a,vdem.4b,mo1,mofe)
+final.se=list(sqrt(diag(vcovPL(ATE_none,cluster=~country+year,aggregate=FALSE))),
+              sqrt(diag(vcovPL(ATE_Client,cluster=~country+year,aggregate=FALSE))),
+              sqrt(diag(vcovPL(ATE_milrate,cluster=~country+year,aggregate=FALSE))),
+              sqrt(diag(vcovPL(vdem.4a,cluster=~country+year,aggregate=FALSE))),
+              sqrt(diag(vcovPL(vdem.4b,cluster=~country+year,aggregate=FALSE))),
+              sqrt(diag(vcovPL(mo1,cluster=~country+year,aggregate=FALSE))),
+              sqrt(diag(vcovPL(mofe,cluster=~country+year,aggregate=FALSE))))
+
+stargazer(final.mod,
+          type="html",
+          title="Final Regression Table, Mediator-Outcome Models",
+          dep.var.caption = "Varieties of Democracy, Participatory Democracy",
+          digits=4,digits.extra=3,p.auto=T,t.auto=T,
+          se=final.se,
+          report="vc*sp",
+          star.cutoffs=c(0.05,0.01,0.005),
+          style="ajps",
+          omit=c("year","country"),
+          add.lines = list(c("Year FE","Yes","Yes","Yes","Yes","Yes","Yes","Yes"),
+                           c("Country FE","No","No","No","No","Yes","No","Yes")),
+          column.labels=c("Exposure-Outcome, Pooled","Pooled (No Interaction)","Panel FE (No Interaction)","Pooled (Interaction)","Panel FE (Interaction)"),
+          column.separate=c(3,1,1,1,1),
+          covariate.labels=c("Population (Logged)","Clientelism",
+                             "Military Participation Rate (MPR)","Urbanisation (% of Population)",
+                             "Per Capita GDP (Logged)","Government Expenditurre (% of GDP)",
+                             "Foreign Aid Received (% of GNI)","Resource Dependence",
+                             "Ethnic Fractionalization","Islamic",
+                             "Population <span>&#215;</span> Urbanization",
+                             "Clientelism <span>&#215;</span> Urbanization",
+                             "MPR <span>&#215;</span> Urbanization"),
+          notes.align="l",
+          out="Robust Tables/Main Results (Mediator-Outcome).html")
+
+
+stargazer(list(vdem.4a,vdem.4b,mo1,mofe),
+          type="html",
+          title="Table 2: State Size (Population) and Participatory Democracy",
+          dep.var.caption = "Varieties of Democracy, Participatory Democracy",
+          digits=4,digits.extra=3,p.auto=T,t.auto=T,
+          se=list(sqrt(diag(vcovPL(vdem.4a,cluster=~country+year,aggregate=FALSE))),
+              sqrt(diag(vcovPL(vdem.4b,cluster=~country+year,aggregate=FALSE))),
+              sqrt(diag(vcovPL(mo1,cluster=~country+year,aggregate=FALSE))),
+              sqrt(diag(vcovPL(mofe,cluster=~country+year,aggregate=FALSE)))),
+          report="vc*s",
+          star.cutoffs=c(0.05,0.01,0.005),
+          style="apsr",
+          omit=c("year","country"),
+          add.lines = list(c("Year FE","Yes","Yes","Yes","Yes"),
+                           c("Country FE","No","Yes","No","Yes")),
+          column.labels=c("Pooled (No Interaction)","Panel FE (No Interaction)","Pooled (Interaction)","Panel FE (Interaction)"),
+          column.separate=c(1,1,1,1),
+          covariate.labels=c("Population (Logged)","Clientelism",
+                             "Military Participation Rate (MPR)","Urbanisation (% of Population)",
+                             "Per Capita GDP (Logged)","Government Expenditurre (% of GDP)",
+                             "Foreign Aid Received (% of GNI)","Resource Dependence",
+                             "Ethnic Fractionalization","Islamic",
+                             "Population <span>&#215;</span> Urbanization",
+                             "Clientelism <span>&#215;</span> Urbanization",
+                             "MPR <span>&#215;</span> Urbanization"),
+          notes.align="l",
+          out="Robust Tables/Main Results Table 2.html")
+```
+
+## T-tests for clientelism
+```{r,echo=TRUE,tidy=TRUE,results='asis'}
+# Difference in means in Clientelism
+ttest_client=t.test(sample.VDem$v2xnp_client[sample.VDem$urban_binary==0],sample.VDem$v2xnp_client[sample.VDem$urban_binary==1],
+                    conf.level=0.95)
+ttest_client
+
+# Observing distribution
+
+sample.VDem$urban_bin=NA
+sample.VDem$urban_bin[sample.VDem$urban_binary==1]="More Urban"
+sample.VDem$urban_bin[sample.VDem$urban_binary==0]="Less Urban"
+violin_client=ggplot(sample.VDem,aes(x=urban_bin,y=v2xnp_client))+
+  geom_violin(trim=FALSE)+
+  stat_summary(fun.data=mean_sdl, mult=1, 
+                 geom="pointrange", color="red")
+violin_client
+
+# Difference in means in GDP
+ttest_gdppc=t.test(sample.VDem$ln_gdppc[sample.VDem$urban_binary==0],sample.VDem$ln_gdppc[sample.VDem$urban_binary==1],
+                    conf.level=0.95)
+ttest_gdppc
+
+# Observing distribution
+violin_gdp=ggplot(sample.VDem,aes(x=urban_bin,y=ln_gdppc))+
+  geom_violin(trim=FALSE)+
+  stat_summary(fun.data=mean_sdl, mult=1, 
+                 geom="pointrange", color="red")
+violin_gdp
+
+#T-test table
+
+ttest_client=report_table(ttest_client)
+ttest_client$Parameter1="Clientelism in Less Urban States"
+ttest_client$Parameter2="Clientelism in More Urban States"
+
+ttest_gdppc=report_table(ttest_gdppc)
+ttest_gdppc$Parameter1="Logged GDP per capita in Less Urban States"
+ttest_gdppc$Parameter2="Logged GDP per capita in More Urban States"
+results=c(ttest_client,ttest_gdppc)
+display(results)
+```
+
+## Exposure Mediator (Milrate)
+
+```{r,echo=TRUE,tidy=TRUE,results='asis'}
+
+#Exposure Mediator (Milrate)
+
+vdem.6a=lm(milrate~ln_popn+v2xnp_client+prop_urban+ln_gdppc+govexpend_ratio+total_odashare_oecd+resourcerent+ethfrac_alesina2003+islamic+as.factor(year),data=sample.VDem)
+
+vdem.6b=lm(milrate~ln_popn+v2xnp_client+prop_urban+ln_gdppc+govexpend_ratio+total_odashare_oecd+resourcerent+country+as.factor(year),data=panel.VDem)
+
+em_milrate=lm(milrate~ln_popn*prop_urban+v2xnp_client*prop_urban+ln_gdppc+govexpend_ratio+total_odashare_oecd+resourcerent+ethfrac_alesina2003+islamic+as.factor(year),data=sample.VDem)
+
+emfe_milrate=lm(milrate~ln_popn*prop_urban+v2xnp_client*prop_urban+ln_gdppc+govexpend_ratio+total_odashare_oecd+resourcerent+country+as.factor(year),data=panel.VDem)
+
+em.mod=list(vdem.6a,vdem.6b,em_milrate,emfe_milrate)
+
+em.se=list(sqrt(diag(vcovPL(vdem.6a,cluster=~country+year,aggregate=FALSE))),
+           sqrt(diag(vcovPL(vdem.6b,cluster=~country+year,aggregate=FALSE))),
+           sqrt(diag(vcovPL(em_milrate,cluster=~country+year,aggregate=FALSE))),
+           sqrt(diag(vcovPL(emfe_milrate,cluster=~country+year,aggregate=FALSE))))
+
+stargazer(em.mod,
+          type="html",
+          title="Final Regression Table, Exposure-Mediator Models (Military Participation Rate)",
+          dep.var.caption = "Military Participation Rate",
+          digits=4,digits.extra=3,p.auto=T,t.auto=T,
+          se=em.se,
+          report="vc*sp",
+          star.cutoffs=c(0.05,0.01,0.005),
+          style="ajps",
+          omit=c("year","country"),
+          add.lines = list(c("Year FE","Yes","Yes","Yes","Yes"),c("Country FE","No","Yes","No","Yes")),
+          column.labels=c("Pooled (No Interaction)","Panel FE (No Interaction)","Pooled (Interaction)","Panel FE (Interaction)"),
+          column.separate=c(1,1,1,1),
+          covariate.labels=c("Population (Logged)","Clientelism",
+                             "Urbanisation (% of Population)",
+                             "Per Capita GDP (Logged)","Government Expenditurre (% of GDP)",
+                             "Foreign Aid Received (% of GNI)","Resource Dependence",
+                             "Ethnic Fractionalization","Islamic",
+                             "Population <span>&#215;</span> Urbanization",
+                             "Clientelism <span>&#215;</span> Urbanization"),
+          notes.align="l",
+          out="Robust Tables/Main Results (Exposure-Mediator, Milrate).html")
+```
+
+## Exposure Mediator (Clientelism)
+
+```{r,echo=TRUE,tidy=TRUE,results='asis'}
+
+#Exposure Mediator (Clientelism)
+
+vdem.8a=lm(v2xnp_client~ln_popn+milrate+prop_urban+ln_gdppc+govexpend_ratio+total_odashare_oecd+resourcerent+ethfrac_alesina2003+islamic+as.factor(year),data=sample.VDem)
+
+vdem.8b=lm(v2xnp_client~ln_popn+milrate+prop_urban+ln_gdppc+govexpend_ratio+total_odashare_oecd+resourcerent+country+as.factor(year),data=panel.VDem)
+
+em_client=lm(v2xnp_client~ln_popn*prop_urban+milrate*prop_urban+ln_gdppc+govexpend_ratio+total_odashare_oecd+resourcerent+ethfrac_alesina2003+islamic+as.factor(year),data=sample.VDem)
+
+emfe_client=lm(v2xnp_client~ln_popn*prop_urban+milrate*prop_urban+ln_gdppc+govexpend_ratio+total_odashare_oecd+resourcerent+country+as.factor(year),data=panel.VDem)
+
+
+em.mod=list(vdem.8a,vdem.8b,em_client,emfe_client)
+
+em.se=list(sqrt(diag(vcovPL(vdem.8a,cluster=~country+year,aggregate=FALSE))),
+           sqrt(diag(vcovPL(vdem.8b,cluster=~country+year,aggregate=FALSE))),
+           sqrt(diag(vcovPL(em_client,cluster=~country+year,aggregate=FALSE))),
+           sqrt(diag(vcovPL(emfe_client,cluster=~country+year,aggregate=FALSE))))
+
+stargazer(em.mod,
+          type="html",
+          title="Final Regression Table, Exposure-Mediator Models (Clientelism)",
+          dep.var.caption = "Clientelism",
+          digits=4,digits.extra=3,p.auto=T,t.auto=T,
+          se=em.se,
+          report="vc*sp",
+          star.cutoffs=c(0.05,0.01,0.005),
+          style="ajps",
+          omit=c("year","country"),
+          add.lines = list(c("Year FE","Yes","Yes","Yes","Yes"),c("Country FE","No","Yes","No","Yes")),
+          column.labels=c("Pooled (No Interaction)","Panel FE (No Interaction)","Pooled (Interaction)","Panel FE (Interaction)"),
+          column.separate=c(1,1,1,1),
+          covariate.labels=c("Population (Logged)",
+                             "Military Participation Rate","Urbanisation (% of Population)",
+                             "Per Capita GDP (Logged)","Government Expenditurre (% of GDP)",
+                             "Foreign Aid Received (% of GNI)","Resource Dependence",
+                             "Ethnic Fractionalization","Islamic",
+                             "Population <span>&#215;</span> Urbanization",
+                             "MPR <span>&#215;</span> Urbanization"),
+          notes.align="l",
+          out="Robust Tables/Main Results (Exposure-Mediator, Clientelism).html")
+```
+
+# Causal Mediation Analysis
+
+## Mediation 1. Pooled OLS Mediation (No Interaction)
+
+```{r,echo=TRUE,tidy=TRUE}
+set.seed(1000)
+modmed1_milrate=panel_mediate_vcovPL_fixed(model.m = vdem.6a, model.y = vdem.4a,
+                                           treat = "ln_popn", mediator = "milrate",
+                                           sims = 1000, robustSE = TRUE)
+summary(modmed1_milrate)
+plot(modmed1_milrate,main="Pooled OLS, Mediator = milrate, Without Interaction",col="red",xlim=c(0,0.035))
+text(x=modmed1_milrate$tau.coef,y=1,labels=paste0(round(modmed1_milrate$tau.coef,5),'***'),pos=3)
+text(x=modmed1_milrate$z.avg,y=2,labels=paste0(round(modmed1_milrate$z.avg,5),'***'),pos=3)
+text(x=modmed1_milrate$d.avg,y=3,labels=paste0(round(modmed1_milrate$d.avg,5),'***'),pos=3)
+mtext("Note: p<0.001 ***, 0.01 **, 0.05 *",side=1,line=3,cex=1)
+
+modmed1_client=panel_mediate_vcovPL_fixed(model.m = vdem.8a, model.y = vdem.4a,
+                                          treat = "ln_popn", mediator = "v2xnp_client",
+                                          sims = 1000, robustSE = TRUE)
+summary(modmed1_client)
+plot(modmed1_client,main="Pooled OLS, Mediator = v2xnp_client, Without Interaction",col="red")
+text(x=modmed1_client$tau.coef,y=1,labels=paste0(round(modmed1_client$tau.coef,5),'***'),pos=3)
+text(x=modmed1_client$z.avg,y=2,labels=paste0(round(modmed1_client$z.avg,5),'***'),pos=3)
+text(x=modmed1_client$d.avg,y=3,labels=round(modmed1_client$d.avg,5),pos=3)
+mtext("Note: p<0.001 ***, 0.01 **, 0.05 *",side=1,line=3,cex=1)
+```
+
+## Mediation 2. Panel FE Mediation (No Interaction)
+
+```{r,echo=TRUE,tidy=TRUE}
+set.seed(1000)
+modmed2_milrate=panel_mediate_vcovPL_fixed(model.m = vdem.6b, model.y = vdem.4b,
+                                           treat = "ln_popn", mediator = "milrate",
+                                           sims = 1000, robustSE = TRUE)
+summary(modmed2_milrate)
+plot(modmed2_milrate,main="Panel FE, Mediator = milrate, Without Interaction",col="red")
+text(x=modmed2_milrate$tau.coef,y=1,labels=paste0(round(modmed2_milrate$tau.coef,5),'**'),pos=3)
+text(x=modmed2_milrate$z.avg,y=2,labels=paste0(round(modmed2_milrate$z.avg,5),'**'),pos=3)
+text(x=modmed2_milrate$d.avg,y=3,labels=round(modmed2_milrate$d.avg,5),pos=3)
+mtext("Note: p<0.001 ***, 0.01 **, 0.05 *",side=1,line=3,cex=1)
+
+modmed2_client=panel_mediate_vcovPL_fixed(model.m = vdem.8b, model.y = vdem.4b,
+                                          treat = "ln_popn", mediator = "v2xnp_client",
+                                          sims = 1000, robustSE = TRUE)
+summary(modmed2_client)
+plot(modmed2_client,main="Panel FE, Mediator = v2xnp_client, Without Interaction",col="red")
+text(x=modmed2_client$tau.coef,y=1,labels=paste0(round(modmed2_client$tau.coef,5)),pos=3) # ATE
+text(x=modmed2_client$z.avg,y=2,labels=paste0(round(modmed2_client$z.avg,5),'**'),pos=3) # ADE
+text(x=modmed2_client$d.avg,y=3,labels=paste0(round(modmed2_client$d.avg,5),'***'),pos=3) # ACME
+mtext("Note: p<0.001 ***, 0.01 **, 0.05 *",side=1,line=3,cex=1)
+```
+
+## Mediation 3. Milrate Pooled OLS Mediation (With Interaction)
+
+```{r,echo=TRUE,tidy=TRUE}
+set.seed(1000)
+
+# Testing for Interaction
+
+modmed3=panel_mediate_vcovPL_fixed(model.m = em_milrate, model.y = mo1,
+                                  treat = "ln_popn", mediator = "milrate",
+                                  sims = 1000, robustSE = TRUE)
+summary(modmed3)
+test.modmed(modmed3,
+            covariates.1=list(prop_urban=mean(sample.VDem$prop_urban)-sd(sample.VDem$prop_urban)),
+            covariates.2=list(prop_urban=mean(sample.VDem$prop_urban)+sd(sample.VDem$prop_urban)),
+            sims=1000)
+plot(modmed3,main="Pooled OLS, Mediator = milrate, With Interaction",col="red")
+text(x=modmed3$tau.coef,y=1,labels=paste0(round(modmed3$tau.coef,5),'***'),pos=3) # ATE
+text(x=modmed3$z.avg,y=2,labels=paste0(round(modmed3$z.avg,5),'***'),pos=3) # ADE
+text(x=modmed3$d.avg,y=3,labels=paste0(round(modmed3$d.avg,5)),pos=3) # ACME
+mtext("Note: p<0.001 ***, 0.01 **, 0.05 *",side=1,line=3,cex=1)
+
+# Additional Mediations
+## Less Urban Countries
+modmed3.1=panel_mediate_vcovPL_fixed(model.m = em_milrate, model.y = mo1,
+                                  treat = "ln_popn", mediator = "milrate",
+                                  sims = 1000, robustSE = TRUE,
+                                  covariates = list(prop_urban=mean(sample.VDem$prop_urban)-sd(sample.VDem$prop_urban)))
+summary(modmed3.1)
+
+## More Urban Countries
+modmed3.2=panel_mediate_vcovPL_fixed(model.m = em_milrate, model.y = mo1,
+                                  treat = "ln_popn", mediator = "milrate",
+                                  sims = 1000, robustSE = TRUE,
+                                  covariates = list(prop_urban=mean(sample.VDem$prop_urban)+sd(sample.VDem$prop_urban)))
+summary(modmed3.2)
+
+
+plot(modmed3.1,main="Pooled OLS, Mediator = milrate, With Interaction (Less Urban)",col="blue")
+text(x=modmed3.1$tau.coef,y=1,labels=paste0(round(modmed3.1$tau.coef,5),'***'),pos=3) # ATE
+text(x=modmed3.1$z.avg,y=2,labels=paste0(round(modmed3.1$z.avg,5),'***'),pos=3) # ADE
+text(x=modmed3.1$d.avg,y=3,labels=paste0(round(modmed3.1$d.avg,5)),pos=3) # ACME
+mtext("Note: p<0.001 ***, 0.01 **, 0.05 *",side=1,line=3,cex=1)
+
+plot(modmed3.2,main="Pooled OLS, Mediator = milrate, With Interaction (More Urban)",col="red")
+text(x=modmed3.2$tau.coef,y=1,labels=paste0(round(modmed3.2$tau.coef,5),'***'),pos=3) # ATE
+text(x=modmed3.2$z.avg,y=2,labels=paste0(round(modmed3.2$z.avg,5),'***'),pos=3) # ADE
+text(x=modmed3.2$d.avg,y=3,labels=paste0(round(modmed3.2$d.avg,5)),pos=3) # ACME
+mtext("Note: p<0.001 ***, 0.01 **, 0.05 *",side=1,line=3,cex=1)
+```
+
+## Mediation 4. Clientelism Pooled OLS Mediation (With Interaction)
+
+```{r,echo=TRUE,tidy=TRUE}
+
+# Testing for Interaction
+
+set.seed(1000)
+modmed4=panel_mediate_vcovPL_fixed(model.m = em_client, model.y = mo1,
+                                  treat = "ln_popn", mediator = "v2xnp_client",
+                                  sims = 1000, robustSE = TRUE)
+summary(modmed4)
+test.modmed(modmed4,
+            covariates.1=list(prop_urban=mean(sample.VDem$prop_urban)-sd(sample.VDem$prop_urban)),
+            covariates.2=list(prop_urban=mean(sample.VDem$prop_urban)+sd(sample.VDem$prop_urban)),
+            sims=1000)
+
+plot(modmed4,main="Pooled OLS, Mediator = v2xnp_client, With Interaction",col="red")
+text(x=modmed4$tau.coef,y=1,labels=paste0(round(modmed4$tau.coef,5),'***'),pos=3) # ATE
+text(x=modmed4$z.avg,y=2,labels=paste0(round(modmed4$z.avg,5),'***'),pos=3) # ADE
+text(x=modmed4$d.avg,y=3,labels=paste0(round(modmed4$d.avg,5)),pos=3) # ACME
+mtext("Note: p<0.001 ***, 0.01 **, 0.05 *",side=1,line=3,cex=1)
+
+# Additional Mediations
+## Less Urban Countries
+modmed4.1=panel_mediate_vcovPL_fixed(model.m = em_client, model.y = mo1,
+                                  treat = "ln_popn", mediator = "v2xnp_client",
+                                  sims = 1000, robustSE = TRUE,
+                                  covariates = list(prop_urban=mean(sample.VDem$prop_urban)-sd(sample.VDem$prop_urban)))
+summary(modmed4.1)
+
+## More Urban Countries
+modmed4.2=panel_mediate_vcovPL_fixed(model.m = em_client, model.y = mo1,
+                                  treat = "ln_popn", mediator = "v2xnp_client",
+                                  sims = 1000, robustSE = TRUE,
+                                  covariates = list(prop_urban=mean(sample.VDem$prop_urban)+sd(sample.VDem$prop_urban)))
+summary(modmed4.2)
+
+
+plot(modmed4.1,main="Pooled OLS, Mediator = v2xnp_client, With Interaction (Less Urban)",col="blue",
+     xlim=c(0,0.05))
+text(x=modmed4.1$tau.coef,y=1,labels=paste0(round(modmed4.1$tau.coef,5),'***'),pos=3) # ATE
+text(x=modmed4.1$z.avg,y=2,labels=paste0(round(modmed4.1$z.avg,5),'***'),pos=3) # ADE
+text(x=modmed4.1$d.avg,y=3,labels=paste0(round(modmed4.1$d.avg,5),'**'),pos=3) # ACME
+mtext("Note: p<0.001 ***, 0.01 **, 0.05 *",side=1,line=3,cex=1)
+
+plot(modmed4.2,main="Pooled OLS, Mediator = v2xnp_client, With Interaction (More Urban)",col="red")
+text(x=modmed4.2$tau.coef,y=1,labels=paste0(round(modmed4.2$tau.coef,5),'**'),pos=3) # ATE
+text(x=modmed4.2$z.avg,y=2,labels=paste0(round(modmed4.2$z.avg,5),'***'),pos=3) # ADE
+text(x=modmed4.2$d.avg,y=3,labels=paste0(round(modmed4.2$d.avg,5),'**'),pos=3) # ACME
+mtext("Note: p<0.001 ***, 0.01 **, 0.05 *",side=1,line=3,cex=1)
+
+```
+
+## Mediation 5. Milrate Panel FE Mediation (With Interaction)
+
+```{r,echo=TRUE,tidy=TRUE}
+
+# Testing for Interaction
+
+set.seed(1000)
+modmed5=panel_mediate_vcovPL_fixed(model.m = emfe_milrate, model.y = mofe,
+                                  treat = "ln_popn", mediator = "milrate",
+                                  sims = 1000, robustSE = TRUE)
+summary(modmed5)
+test.modmed(modmed5,
+            covariates.1=list(prop_urban=mean(panel.VDem$prop_urban)-sd(sample.VDem$prop_urban)),
+            covariates.2=list(prop_urban=mean(panel.VDem$prop_urban)+sd(sample.VDem$prop_urban)),
+            sims=1000)
+
+plot(modmed5,main="Panel FE, Mediator = milrate, With Interaction",col="red")
+text(x=modmed5$tau.coef,y=1,labels=paste0(round(modmed5$tau.coef,5),'**'),pos=3) # ATE
+text(x=modmed5$z.avg,y=2,labels=paste0(round(modmed5$z.avg,5),'**'),pos=3) # ADE
+text(x=modmed5$d.avg,y=3,labels=paste0(round(modmed5$d.avg,5)),pos=3) # ACME
+mtext("Note: p<0.001 ***, 0.01 **, 0.05 *",side=1,line=3,cex=1)
+
+# Additional Mediations
+## Less Urban Countries
+modmed5.1=panel_mediate_vcovPL_fixed(model.m = emfe_milrate, model.y = mofe,
+                                  treat = "ln_popn", mediator = "milrate",
+                                  sims = 1000, robustSE = TRUE,
+                                  covariates = list(prop_urban=mean(panel.VDem$prop_urban)-sd(panel.VDem$prop_urban)))
+summary(modmed5.1)
+
+## More Urban Countries
+modmed5.2=panel_mediate_vcovPL_fixed(model.m = emfe_milrate, model.y = mofe,
+                                  treat = "ln_popn", mediator = "milrate",
+                                  sims = 1000, robustSE = TRUE,
+                                  covariates = list(prop_urban=mean(panel.VDem$prop_urban)+sd(panel.VDem$prop_urban)))
+summary(modmed5.2)
+
+
+plot(modmed5.1,main="Panel FE, Mediator = milrate, With Interaction (Less Urban)",col="blue")
+text(x=modmed5.1$tau.coef,y=1,labels=paste0(round(modmed5.1$tau.coef,5),'***'),pos=3) # ATE
+text(x=modmed5.1$z.avg,y=2,labels=paste0(round(modmed5.1$z.avg,5),'***'),pos=3) # ADE
+text(x=modmed5.1$d.avg,y=3,labels=paste0(round(modmed5.1$d.avg,5)),pos=3) # ACME
+mtext("Note: p<0.001 ***, 0.01 **, 0.05 *",side=1,line=3,cex=1)
+
+plot(modmed5.2,main="Panel FE, Mediator = milrate, With Interaction (More Urban)",col="red")
+text(x=modmed5.2$tau.coef,y=1,labels=paste0(round(modmed5.2$tau.coef,5)),pos=3) # ATE
+text(x=modmed5.2$z.avg,y=2,labels=paste0(round(modmed5.2$z.avg,5)),pos=3) # ADE
+text(x=modmed5.2$d.avg,y=3,labels=paste0(round(modmed5.2$d.avg,5)),pos=3) # ACME
+mtext("Note: p<0.001 ***, 0.01 **, 0.05 *",side=1,line=3,cex=1)
+```
+
+## Mediation 6. Clientelism Panel FE Mediation (With Interaction)
+
+```{r,echo=TRUE,tidy=TRUE}
+
+# Testing for Interaction
+
+set.seed(1000)
+modmed6=panel_mediate_vcovPL_fixed(model.m = emfe_client, model.y = mofe,
+                                  treat = "ln_popn", mediator = "v2xnp_client",
+                                  sims = 1000, robustSE = TRUE)
+summary(modmed6)
+test.modmed(modmed6,
+            covariates.1=list(prop_urban=mean(panel.VDem$prop_urban)-sd(sample.VDem$prop_urban)),
+            covariates.2=list(prop_urban=mean(panel.VDem$prop_urban)+sd(sample.VDem$prop_urban)),
+            sims=1000)
+
+plot(modmed6,main="Panel FE, Mediator = v2xnp_client, With Interaction",col="red")
+text(x=modmed6$tau.coef,y=1,labels=paste0(round(modmed6$tau.coef,5)),pos=3) # ATE
+text(x=modmed6$z.avg,y=2,labels=paste0(round(modmed6$z.avg,5),'**'),pos=3) # ADE
+text(x=modmed6$d.avg,y=3,labels=paste0(round(modmed6$d.avg,5),'***'),pos=3) # ACME
+mtext("Note: p<0.001 ***, 0.01 **, 0.05 *",side=1,line=3,cex=1)
+
+
+# Additional Mediations
+## Less Urban Countries
+modmed6.1=panel_mediate_vcovPL_fixed(model.m = emfe_client, model.y = mofe,
+                                  treat = "ln_popn", mediator = "v2xnp_client",
+                                  sims = 1000, robustSE = TRUE,
+                                  covariates = list(prop_urban=mean(panel.VDem$prop_urban)-sd(panel.VDem$prop_urban)))
+summary(modmed6.1)
+
+## More Urban Countries
+modmed6.2=panel_mediate_vcovPL_fixed(model.m = emfe_client, model.y = mofe,
+                                  treat = "ln_popn", mediator = "v2xnp_client",
+                                  sims = 1000, robustSE = TRUE,
+                                  covariates = list(prop_urban=mean(panel.VDem$prop_urban)+sd(panel.VDem$prop_urban)))
+summary(modmed6.2)
+
+plot(modmed6.1,main="Panel FE, Mediator = v2xnp_client, With Interaction (Less Urban)",col="blue")
+text(x=modmed6.1$tau.coef,y=1,labels=paste0(round(modmed6.1$tau.coef,5)),pos=3) # ATE
+text(x=modmed6.1$z.avg,y=2,labels=paste0(round(modmed6.1$z.avg,5),'***'),pos=3) # ADE
+text(x=modmed6.1$d.avg,y=3,labels=paste0(round(modmed6.1$d.avg,5),'***'),pos=3) # ACME
+mtext("Note: p<0.001 ***, 0.01 **, 0.05 *",side=1,line=3,cex=1)
+
+plot(modmed6.2,main="Panel FE, Mediator = v2xnp_client, With Interaction (More Urban)",col="red")
+text(x=modmed6.2$tau.coef,y=1,labels=paste0(round(modmed6.2$tau.coef,5)),pos=3) # ATE
+text(x=modmed6.2$z.avg,y=2,labels=paste0(round(modmed6.2$z.avg,5)),pos=3) # ADE
+text(x=modmed6.2$d.avg,y=3,labels=paste0(round(modmed6.2$d.avg,5),'*'),pos=3) # ACME
+mtext("Note: p<0.001 ***, 0.01 **, 0.05 *",side=1,line=3,cex=1)
+```

@@ -1,0 +1,211 @@
+---
+title: "Honours Thesis: Figures"
+author: "Winston Wee"
+output: 
+  html_document:
+    df_print: paged
+    pdf_document: default
+  fontsize: 12pt
+---
+
+\vspace{5ex}
+
+```{=html}
+<style>
+body{
+text-align: justify
+}
+</style>
+```
+#  Script Setup
+
+```{r, echo=FALSE, message=FALSE, tidy=TRUE, results='hide'}
+rm(list=ls())
+cat("\014")
+getwd()
+setwd("Replication Files")
+load_packages=c("dplyr","miceadds","readxl","writexl","data.table","naniar","car","bestNormalize","broom",
+                "sandwich","lmtest","plm","ggplot2","fixest","textreg","stargazer","pcse","mediation",
+                "prais","stringr","interactions","tidyverse","sjPlot","plm","lme4","nlme",
+                "olsrr","multiwayvcov","ivreg","ghibli","formatR","abe","interplot","arm","ggpubr","sf")
+suppressMessages(lapply(load_packages,require,character.only=TRUE))
+rm(load_packages)
+## Loading HT-specific Functions
+source("06 panelAR_HT Functions.R") # for the AR(1) correction
+source("05 Functions.R") # for amended Mediation functions
+source("07 Panel Cluster Robust SE Mediation.R") # for amended Mediation functions
+source("09 Driscoll-Kraay SE Mediation.R") # SCC for Mediation
+source("10 TSLS Mediation.R") # Mediation TSLS
+
+## Load required datasets
+load("Subsetted Datasets.RData")
+
+demeaned=grep("_demeaned$",colnames(sample.VDem),value=TRUE)
+panel.VDem=sample.VDem[,c("country","year",demeaned)]
+colname_panel=colnames(panel.VDem)
+colname_panel=gsub("_demeaned","",colname_panel)
+colnames(panel.VDem)=colname_panel
+rm(colname_panel,panel_dat,sample.full,demeaned)
+load("04Subsetted Datasets.RData")
+load("03 All_Democracy_Data.RData")
+rm(panel_dat)
+
+dat_panel$mil_presence=1
+dat_panel$mil_presence[dat_panel$country%in%c("Dominica","Grenada","Kiribati","Micronesia, Fed. Sts.",
+                                              "Marshall Islands","Nauru","Palau","Samoa","Solomon Islands",
+                                              "St. Lucia","St. Vincent and the Grenadines","Tuvalu","Vanuatu")]=0
+dat_panel$milrate=NA
+dat_panel$milrate[dat_panel$mil_presence==0]=0
+dat_panel$milrate[dat_panel$mil_presence==1]=(((dat_panel$milper[dat_panel$mil_presence==1]*1000)+1)*1000)/dat_panel$population[dat_panel$mil_presence==1]
+
+countries=data.frame(country=unique(dat_panel$country),
+                     ccode=unique(dat_panel$ccode),
+                     stateabb=unique(dat_panel$stateabb.x),
+                     sample=NA)
+countries$sample[countries$ccode%in%sample.VDem$ccode]="V-Dem"
+countries$sample[countries$ccode%in%sample.micro$ccode]="Microstates"
+countries$sample[is.na(countries$sample)]="Not in Sample"
+
+world=read.csv("world.csv")
+countries=left_join(countries,world,by="country")
+map=map_data("world")
+
+```
+
+```{r,echo=TRUE,tidy=TRUE,results='asis'}
+sample.VDem1=sample.VDem%>%
+  dplyr::select(v2x_partipdem,v2x_polyarchy,fh_total_reversed,
+                ln_popn,v2xnp_client,milrate,prop_urban,ln_gdppc,
+                govexpend_ratio,total_odashare_oecd,resourcerent,
+                ethfrac_alesina2003,islamic,country,year)%>%
+  mutate(year=as.factor(year),
+         country=as.factor(country))%>%
+  mutate_at(c("ln_popn","v2xnp_client","milrate","prop_urban",
+              "ln_gdppc","govexpend_ratio","total_odashare_oecd",
+              "resourcerent","ethfrac_alesina2003","islamic"),~(scale(.) %>% as.vector))
+
+panel.VDem1=sample.VDem%>%
+  dplyr::select(v2x_partipdem,v2x_polyarchy,fh_total_reversed,
+                ln_popn,v2xnp_client,milrate,prop_urban,ln_gdppc,
+                govexpend_ratio,total_odashare_oecd,resourcerent,
+                country,year)%>%
+  mutate(year=as.factor(year),
+         country=as.factor(country))%>%
+  mutate_at(c("ln_popn","v2xnp_client","milrate","prop_urban",
+              "ln_gdppc","govexpend_ratio","total_odashare_oecd",
+              "resourcerent"),~(scale(.) %>% as.vector))
+
+vdem.4a=lm(v2x_partipdem~ln_popn+v2xnp_client+milrate+prop_urban+ln_gdppc+govexpend_ratio+total_odashare_oecd+resourcerent+ethfrac_alesina2003+islamic+as.factor(year),data=sample.VDem1)
+coeftest(vdem.4a,vcovPL(vdem.4a,cluster=~country,order.by=~year,aggregate=FALSE))
+vdem.4b=lm(v2x_partipdem~ln_popn+v2xnp_client+milrate+prop_urban+ln_gdppc+govexpend_ratio+total_odashare_oecd+resourcerent+country+as.factor(year),data=panel.VDem1)
+coeftest(vdem.4a,vcovPL(vdem.4b,cluster=~country,order.by=~year,aggregate=FALSE))
+
+arm::coefplot(vdem.4a,col.pts="red",cex.pts=1.5)
+
+
+stdcoef=sjPlot::plot_model(vdem.4a,type="std",terms=c("ln_popn","v2xnp_client","milrate","prop_urban",
+                                                      "ln_gdppc","govexpend_ratio","total_odashare_oecd",
+                                                      "resourcerent","ethfrac_alesina2003","islamic"),
+                           show.data=TRUE,
+                           show.values=TRUE,
+                           show.p=TRUE,
+                           vline.color="black",
+                           auto.label=FALSE,
+                           title="Coefficients plot",
+                           axis.title="Standardised Estimates",
+                           axis.labels=c("Islamic","Ethnic Fractionalisation","Resource Dependence","Foreign Aid Received (% of GNI)",
+                                         "Government Expenditure (% of GDP)","Per Capita GDP (Logged)","Urbanisation (% of Population)","Military Participation Rate",
+                                         "Clientelism","Population (Logged)"))
+stdcoef
+```
+
+```{r,echo=TRUE,tidy=TRUE,results='asis'}
+panelplot_milrate=ggplot(sample.VDem,aes(x=year,y=milrate))+
+  geom_line()+
+  ggtitle("Military Participation Rate across Time")+
+           xlab("Year") + ylab("Military Participation Rate")
+panelplot_milrate+facet_wrap(.~country,ncol=3)
+
+panelplot_client=ggplot(sample.VDem,aes(x=year,y=v2xnp_client))+
+  geom_line()+
+  ggtitle("Clientelism across Time")+
+           xlab("Year") + ylab("Clientelism")
+panelplot_client+facet_wrap(.~country,ncol=3)
+
+panelplot_democ=ggplot(sample.VDem,aes(x=year,y=v2x_partipdem))+
+  geom_line()+
+  ggtitle("Participatory Democracy across Time")+
+           xlab("Year") + ylab("Participatory Democracy")
+panelplot_democ+facet_wrap(.~country,ncol=3)
+
+panelplot_popn=ggplot(sample.VDem,aes(x=year,y=ln_popn))+
+  geom_line()+
+  ggtitle("Population across Time")+
+           xlab("Year") + ylab("Population")
+panelplot_popn+facet_wrap(.~country,ncol=3)
+
+panelplot_urban=ggplot(sample.VDem,aes(x=year,y=prop_urban))+
+  geom_line()+
+  ggtitle("Urbanisation across Time")+
+           xlab("Year") + ylab("Urbanisation")
+panelplot_urban+facet_wrap(.~country,ncol=3)
+
+panelplot_res=ggplot(sample.VDem,aes(x=year,y=resourcerent))+
+  geom_line()+
+  ggtitle("Resource Dependence across Time")+
+           xlab("Year") + ylab("Resource Dependence")
+panelplot_res+facet_wrap(.~country,ncol=3)
+
+panelplot_aid=ggplot(sample.VDem,aes(x=year,y=total_odashare_oecd))+
+  geom_line()+
+  ggtitle("Foreign Aid Dependence across Time")+
+           xlab("Year") + ylab("Foreign Aid Dependence")
+panelplot_aid+facet_wrap(.~country,ncol=3)
+```
+
+```{r,echo=TRUE,tidy=TRUE,results='asis'}
+idn_democ=ggplot(sample.VDem[sample.VDem$country=="Indonesia",],aes(x=year,y=v2x_partipdem))+
+  geom_line(color="red")+
+  geom_point()+
+  ggtitle("Participatory Democracy across Time, Indonesia")+
+           xlab("Year") + ylab("Participatory Democracy")
+
+idn_popn=ggplot(sample.VDem[sample.VDem$country=="Indonesia",],aes(x=year,y=population))+
+  geom_line(color="red")+
+  geom_point()+
+  ggtitle("Population across Time, Indonesia")+
+           xlab("Year") + ylab("Population")
+
+idn_milrate=ggplot(sample.VDem[sample.VDem$country=="Indonesia",],aes(x=year,y=milrate))+
+  geom_line(color="red")+
+  geom_point()+
+  ggtitle("Military Participation Rate across Time, Indonesia")+
+           xlab("Year") + ylab("Military Participation Rate")
+
+
+idn_client=ggplot(sample.VDem[sample.VDem$country=="Indonesia",],aes(x=year,y=v2xnp_client))+
+  geom_line(color="red")+
+  geom_point()+
+  ggtitle("Clientelism across Time, Indonesia")+
+           xlab("Year") + ylab("Clientelism")
+
+figure_indo=ggarrange(idn_popn,idn_democ,idn_client,idn_milrate,
+                 ncol=2,nrow=2)
+figure_indo
+
+idn_milper=ggplot(dat_panel[dat_panel$country=="Indonesia",],aes(x=year,y=milper))+
+  geom_line(color="red")+
+  geom_point()+
+  ggtitle("Number of Military Personnel across Time (in '000s), Indonesia")+
+           xlab("Year") + ylab("Number of Military Personnel across Time (in '000s)")
+
+idn_full_milrate=ggplot(dat_panel[dat_panel$country=="Indonesia",],aes(x=year,y=milrate))+
+  geom_line(color="red")+
+  geom_point()+
+  ggtitle("Military Participation Rate across Time, Indonesia")+
+           xlab("Year") + ylab("Military Participation Rate")
+
+indo_mil=ggarrange(idn_milper,idn_full_milrate,
+                 ncol=1,nrow=2)
+
+```
